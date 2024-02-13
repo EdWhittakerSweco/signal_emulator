@@ -54,7 +54,6 @@ class SignalEmulator:
             ),
             self,
         )
-
         self.controllers = Controllers([], self)
         self.streams = Streams([], self)
         self.stages = Stages([], self)
@@ -66,7 +65,6 @@ class SignalEmulator:
         self.phase_delays = PhaseDelays([], self)
         self.modified_phase_delays = ModifiedPhaseDelays([], self)
         self.prohibited_stage_moves = ProhibitedStageMoves([], self)
-
         if config.get("timing_sheet_directory"):
             self.load_timing_sheets_from_directory(
                 timing_sheet_directory=config["timing_sheet_directory"],
