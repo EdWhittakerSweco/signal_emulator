@@ -30,6 +30,7 @@ from signal_emulator.time_period import TimePeriods
 from signal_emulator.utilities.postgres_connection import PostgresConnection
 from signal_emulator.utilities.utility_functions import load_json_to_dict
 from signal_emulator.visum_objects import VisumSignalGroups, VisumSignalControllers
+from signal_emulator.coordinate_transformer import CoordinateTransformer
 
 
 class SignalEmulator:
@@ -46,6 +47,7 @@ class SignalEmulator:
             self.postgres_connection = None
             self.load_from_postgres = False
         self.timing_sheet_parser = TimingSheetParser(self)
+        self.osgb36_to_wgs84 = CoordinateTransformer(source_epsg_code=27700, target_epsg_code=4326)
         self.plan_parser = PlanParser()
         self.time_periods = TimePeriods(
             config.get(
@@ -135,7 +137,7 @@ class SignalEmulator:
         logging.getLogger("").addHandler(console)
         return logging.getLogger(__name__)
 
-    def generate_signal_plans(self):
+    def generate_signal_plans(self, ped_only=False):
         """
         Method to generate signal plans from UTC plans and controller spec definitions
         :return: None
@@ -151,9 +153,10 @@ class SignalEmulator:
                 self.time_periods.active_period_id = time_period.get_key()
                 stream_plan_dict = self.get_stream_plan_dict(controller)
                 if len(stream_plan_dict) > 0:
-                    self.signal_plans.add_from_stream_plan_dict(
-                        stream_plan_dict, time_period, signal_plan_number
-                    )
+                    if not ped_only or any([s.is_pv_px_mode for s in stream_plan_dict.keys()]):
+                        self.signal_plans.add_from_stream_plan_dict(
+                            stream_plan_dict, time_period, signal_plan_number
+                        )
                 else:
                     self.logger.warning(
                         f"Controller: {controller.controller_key} was not processed to signal plans because suitable"

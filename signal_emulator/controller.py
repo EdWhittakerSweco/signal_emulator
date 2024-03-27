@@ -155,6 +155,7 @@ class Controller(BaseItem):
     y_coord: int
     address: str
     spec_issue_no: str
+    is_pedestrian_controller: bool
     signal_emulator: object
 
     TIMING_SHEET_COLUMN_LOOKUP_PATH = os.path.join(
@@ -300,6 +301,14 @@ class Controller(BaseItem):
     @property
     def visum_controller_name(self):
         return f"{self.site_number_int} - {self.address}"
+
+    @property
+    def latitude(self):
+        return self.signal_emulator.osgb36_to_wgs84.transform(self.x_coord, self.y_coord)[1]
+
+    @property
+    def longitude(self):
+        return self.signal_emulator.osgb36_to_wgs84.transform(self.x_coord, self.y_coord)[0]
 
 
 class Controllers(BaseCollection):
@@ -584,6 +593,7 @@ class Stream(BaseItem):
     site_number: str
     signal_emulator: object
     stage_keys_in_stream: Optional[List[int]] = None
+    is_pv_px_mode: bool = False
 
     def __init__(self, controller_key, stream_number, site_number, signal_emulator, stage_keys_in_stream=None):
         super().__init__(signal_emulator=signal_emulator)
