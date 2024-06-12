@@ -9,9 +9,10 @@ class SignalPlan(BaseItem):
     signal_emulator: object
     controller_key: str
     signal_plan_number: str
-    cycle_time: int
+    cycle_time: int | None
     name: str
     time_period_id: str
+    mode: str
 
     def __post_init__(self):
         self.signal_plan_streams = []
@@ -31,7 +32,7 @@ class SignalPlan(BaseItem):
     def emulate(self):
         if not self.signal_emulator.visum_signal_controllers.key_exists(self.controller_key):
             self.signal_emulator.visum_signal_controllers.add_visum_signal_controller(
-                self.controller_key, self.controller.visum_controller_name, self.cycle_time, self.time_period_id, self.signal_emulator.run_datestamp
+                self.controller_key, self.controller.visum_controller_name, self.cycle_time, self.time_period_id, self.signal_emulator.run_datestamp, self.mode
             )
         visum_signal_controller = self.signal_emulator.visum_signal_controllers.get_by_key(self.controller_key)
         if self.time_period_id == "AM":
@@ -58,6 +59,19 @@ class SignalPlans(BaseCollection):
         super().__init__(item_data=item_data, signal_emulator=signal_emulator)
         self.signal_emulator = signal_emulator
 
+    def add_local_control(self, streams, period, signal_plan_number):
+        first_stream = streams[0]
+        signal_plan = SignalPlan(
+            controller_key=first_stream.controller.controller_key,
+            signal_emulator=self.signal_emulator,
+            signal_plan_number=signal_plan_number,
+            cycle_time=None,
+            name="LOCAL CONTROL",
+            time_period_id=period.get_key(),
+            mode="LOCAL"
+        )
+        self.add_instance(signal_plan)
+
     def add_from_stream_plan_dict(self, streams_and_plans, period, signal_plan_number):
         first_plan = next(iter(streams_and_plans.values()))
         first_stream = next(iter(streams_and_plans.keys()))
@@ -69,10 +83,13 @@ class SignalPlans(BaseCollection):
             cycle_time=max_cycle_time,
             name=first_plan.name,
             time_period_id=period.get_key(),
+            mode="UTC"
         )
         self.add_instance(signal_plan)
 
         for stream, plan in streams_and_plans.items():
+            if not plan:
+                continue
             m37_stages = self.get_m37_stage_numbers(stream.site_number)
             stage_sequence = plan.get_stage_sequence(m37_stages=m37_stages, stream=stream, cycle_time=max_cycle_time)
             signal_plan_stream = SignalPlanStream(
@@ -259,10 +276,6 @@ class SignalPlanStream(BaseItem):
                 "M37s not found, plan pulse times used for stage lengths"
             )
 
-        # self.signal_emulator.visum_signal_controllers.add_visum_signal_controller(
-        #     self.controller_key, self.controller.address, cycle_time, self.signal_plan.time_period_id, self.signal_emulator.run_datestamp
-        # )
-
         stream.active_stage_key = stream.controller_key, self.signal_plan_stages[-1].stage_number
         if len(self.signal_plan_stages) == 1:
             for phase in self.signal_plan_stages[-1].stage.phases_in_stage:
@@ -427,6 +440,7 @@ class SignalPlanStream(BaseItem):
 
             stream.active_stage_key = (stream.controller_key, signal_plan_stage.stage_number)
 
+        # Create PhaseTimimgs for all green phases
         phases_in_all_stages = set(all_phases_used)
         for signal_plan_stage in self.signal_plan_stages:
             phases_in_all_stages = phases_in_all_stages & set(signal_plan_stage.stage.phases_in_stage)
@@ -443,8 +457,22 @@ class SignalPlanStream(BaseItem):
             )
             self.signal_emulator.phase_timings.add_instance(phase_timing)
 
-
-        aa=66
+        # Create PhaseTimings for unused, all red phases
+        unused_phases = set(stream.phases_in_stream)
+        for signal_plan_stage in self.signal_plan_stages:
+            unused_phases -= set(signal_plan_stage.stage.phases_in_stage)
+        for phase in unused_phases:
+            phase_timing = PhaseTiming(
+                signal_emulator=self.signal_emulator,
+                controller_key=stream.controller_key,
+                site_id=stream.site_number,
+                phase_ref=phase.phase_ref,
+                index=0,
+                start_time=0,
+                end_time=0,
+                time_period_id=self.signal_plan.time_period_id,
+            )
+            self.signal_emulator.phase_timings.add_instance(phase_timing)
 
     @staticmethod
     def constrain_time_to_cycle_time(time, cycle_time):

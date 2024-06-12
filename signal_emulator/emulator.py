@@ -100,7 +100,11 @@ class SignalEmulator:
             [], self, config.get("output_directory_visum", None)
         )
         self.visum_signal_controllers = VisumSignalControllers(
-            [], self, config.get("output_directory_visum", None)
+            [],
+            self,
+            config.get("output_directory_visum", None),
+            config.get("sld_pdf_directory"),
+            config.get("timing_sheet_pdf_directory")
         )
         self.plan_timetables = PlanTimetables(
             signal_emulator=self, pja_directory_path=config.get("PJA_directory", None)
@@ -150,7 +154,7 @@ class SignalEmulator:
             for signal_plan_number, time_period in enumerate(self.time_periods, start=1):
                 self.time_periods.active_period_id = time_period.get_key()
                 stream_plan_dict = self.get_stream_plan_dict(controller)
-                if len(stream_plan_dict) > 0:
+                if any(stream_plan_dict.values()):
                     if not ped_only or any([s.is_pv_px_mode for s in stream_plan_dict.keys()]):
                         self.signal_plans.add_from_stream_plan_dict(
                             stream_plan_dict, time_period, signal_plan_number
@@ -165,20 +169,25 @@ class SignalEmulator:
         stream_plan_dict = {}
         for stream in controller.streams:
             plan = self.get_best_matching_plan(stream)
-            if plan:  # todo sort out FT plans
-                stream_plan_dict[stream] = plan
+            stream_plan_dict[stream] = plan
         return stream_plan_dict
 
     def get_best_matching_plan(self, stream):
-        """ """
+        """
+        Function to get the best matching plan for a stream
+        :param stream: Stream
+        :return: Plan
+        """
         pja = self.plan_timetables.get_by_key(
             (stream.site_number, self.time_periods.active_period_id)
         )
-        if pja and pja.plan:
+        # If Plan exists that is referenced in pJA file then return this Plan
+        if pja and pja.control_plan:
             self.logger.info(
-                f"Plan: {pja.plan.plan_number} {pja.plan.name} {pja.plan.site_id} selected from PJA file"
+                f"Plan: {pja.control_plan.plan_number} {pja.control_plan.name} {pja.control_plan.site_id} selected from PJA file"
             )
-            return pja.plan
+            return pja.control_plan
+        # Else return best matching plan base on plan name, WAT AM for example
         elif self.get_plan_for_active_period(stream):
             plan = self.get_plan_for_active_period(stream)
             self.logger.info(
@@ -186,8 +195,10 @@ class SignalEmulator:
                 f"{self.time_periods.active_period_id}"
             )
             return plan
-        elif len(stream.plans) > 0:
-            plan = stream.plans[0]
+        # Else return the first available plan
+        non_mins_plans = [p for p in stream.plans if "MINS" not in p.name.upper()]
+        if non_mins_plans:
+            plan = non_mins_plans[0]
             self.logger.info(
                 f"Plan: {plan.plan_number} {plan.name} selected the first available plan"
             )
@@ -203,10 +214,16 @@ class SignalEmulator:
             }:
                 return plan
         for plan in stream.plans:
-            if "WAT" in plan.name and self.time_periods.active_period_id in plan.name:
+            if "WAT" in plan.name and (
+                self.time_periods.active_period.name in plan.name or
+                self.time_periods.active_period.long_name in plan.name
+            ):
                 return plan
         for plan in stream.plans:
-            if self.time_periods.active_period_id in plan.name:
+            if (
+                self.time_periods.active_period.name in plan.name or
+                self.time_periods.active_period.long_name in plan.name
+            ):
                 return plan
         return None
 
@@ -287,10 +304,10 @@ class SignalEmulator:
         :return:
         """
         for phase_timing in self.phase_timings:
-            if not self.visum_signal_groups.key_exists((phase_timing.controller_key, phase_timing.visum_phase_name)):
+            if not self.visum_signal_groups.key_exists((phase_timing.controller_key, phase_timing.signal_group_number)):
                 self.visum_signal_groups.add_from_phase_timing(phase_timing)
             visum_signal_group = self.visum_signal_groups.get_by_key(
-                (phase_timing.controller_key, phase_timing.visum_phase_name)
+                (phase_timing.controller_key, phase_timing.signal_group_number)
             )
             if phase_timing.time_period_id == "AM":
                 visum_signal_group.green_time_start_am = phase_timing.start_time
